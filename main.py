@@ -1,13 +1,15 @@
+import httpx
+import json
 import logging
 import sqlite3
 import os
 import re
 import random
 import httpx
-import logging
 import asyncio
 import os
 from google import genai
+from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
@@ -15,7 +17,9 @@ from aiogram.filters import Command
 
 
 
-TOKEN = "8503829626:AAECVoYUeUsgrgS_0M7Yp7rxBnuok1qxPgk"
+
+
+TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
@@ -25,67 +29,224 @@ user_profiles = {} #  можна зберігати статику (зріст, 
 user_goals = {}  # Цілі користувача
 user_stats = {}  # Статистика
 
-# Налаштування API
-# Налаштування API
-GOOGLE_API_KEY = "AIzaSyBULFZ-cuhoHe2xubWJCaLITOEibsTmw80"
-client = genai.Client(api_key=GOOGLE_API_KEY)
 
-def analyze_intent(text):
-    text = text.lower()
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+# Список безкоштовних моделей
+FREE_MODELS = [
+    "deepseek/deepseek-chat",           # DeepSeek - найкраща для української
+    "deepseek/deepseek-r1",              # DeepSeek R1 - розумна
+    "google/gemini-2.0-flash-free",      # Gemini 2.0
+    "microsoft/phi-3-medium-128k",       # Microsoft Phi-3
+    "qwen/qwen-2.5-72b-instruct",        # Qwen 2.5
+    "meta-llama/llama-3.3-70b-instruct", # Llama 3.3
+]
 
-    intents = {
-        'тренування': ['тренування', 'вправи', 'зал', 'спортзал', 'воркаут', 'фітнес'],
-        'харчування': ['їсти', 'харчування', 'дієт', 'калорі', 'живлення', 'сніданок', 'обід', 'вечеря'],
-        'техніка': ['технік', 'як робити', 'правильно', 'помилка', 'виконання', 'навчи'],
-        'прогрес': ['прогрес', 'результат', 'зміни', 'схуд', 'набрав', 'покращенн'],
-        'мотивація': ['мотивац', 'лінь', 'нехочеться', 'нема сил', 'кинути'],
-        'здоров\'я': ['біль', 'травм', 'спина', 'коліно', 'плече', 'тиск', 'серце'],
-        'відпочинок': ['відпочинок', 'сон', 'відновлення', 'релакс', 'стрес'],
-        'вода': ['вода', 'пити', 'зневоднення', 'рідина']
-    }
-
-    for intent, keywords in intents.items():
-        if any(keyword in text for keyword in keywords):
-            return intent
-    return 'загальний'
-
+# Кеш для збереження контексту користувача (вже є user_context)
+# Додатковий кеш для параметрів користувача
+user_training_params = {}  # зберігає параметри користувача (вага, зріст, ціль)
 
 async def get_ai_response_router(user_id, user_message):
-    """Функція для роботи з Google Gemini API в режимі NLP Консультація"""
+    """Функція для роботи з OpenRouter API - ГЕНЕРУЄ ІНДИВІДУАЛЬНІ ВІДПОВІДІ"""
+    
+    # Отримуємо параметри користувача
+    user_params = user_profiles.get(user_id, {})
+    user_goal = user_goals.get(user_id, "не визначено")
+    
+    # Динамічний system prompt з урахуванням параметрів користувача
+    system_prompt = f"""Ти — TITAN PROTOCOL, елітний AI-тренер. Ти спілкуєшся природно, без роботизованих фраз. Відповідай українською мовою, звертайся на "ти".
 
-    # Системний промпт для AI
-    system_prompt = """Ти — TITAN PROTOCOL, елітний AI-тренер. Ти спілкуєшся природно, без роботизованих фраз. Відповідай українською мовою, звертайся на "ти". Допомагай з тренуваннями, харчуванням, технікою вправ. Будь дружнім і професійним."""
+Параметри користувача:
+- Стать: {user_params.get('gender', 'не вказано')}
+- Зріст: {user_params.get('height', 'не вказано')} см
+- Вага: {user_params.get('weight', 'не вказано')} кг
+- Ціль: {user_goal}
 
-    # Ініціалізація історії
+Твоє завдання: 
+1. Аналізуй запит користувача
+2. Відповідай ПЕРСОНАЛЬНО, враховуючи його параметри
+3. Генеруй УНІКАЛЬНІ програми тренувань під кожного користувача
+4. Якщо користувач просить "іншу програму" - створюй нову, відмінну від попередньої
+5. Враховуй історію діалогу для персоналізації
+
+Будь дружнім, мотивуючим та професійним!"""
+    
     if user_id not in user_context:
         user_context[user_id] = []
-
+    
     user_context[user_id].append(f"Користувач: {user_message}")
+    
+    if len(user_context[user_id]) > 15:  # Збільшили пам'ять до 15 повідомлень
+        user_context[user_id] = user_context[user_id][-15:]
+    
+    # Формуємо історію діалогу з контекстом
+    messages = [{"role": "system", "content": system_prompt}]
+    
+    for entry in user_context[user_id]:
+        if entry.startswith("Користувач:"):
+            messages.append({"role": "user", "content": entry.replace("Користувач: ", "")})
+        elif entry.startswith("Тренер:"):
+            messages.append({"role": "assistant", "content": entry.replace("Тренер: ", "")})
+    
+    # Перебираємо моделі для отримання AI відповіді
+    for model in FREE_MODELS:
+        try:
+            await asyncio.sleep(0.3)
+            logging.info(f"Спроба використати модель: {model}")
+            
+            async with httpx.AsyncClient(timeout=90.0) as http_client:
+                response = await http_client.post(
+                    OPENROUTER_API_URL,
+                    headers={
+                        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": model,
+                        "messages": messages,
+                        "temperature": 0.8,  # Підвищили для більш креативних відповідей
+                        "max_tokens": 2500
+                    }
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    ai_answer = result["choices"][0]["message"]["content"]
+                    user_context[user_id].append(f"Тренер: {ai_answer}")
+                    logging.info(f"✅ Модель {model} згенерувала персоналізовану відповідь")
+                    return ai_answer
+                else:
+                    logging.warning(f"❌ Модель {model} помилка: {response.status_code}")
+                    continue
+                    
+        except Exception as e:
+            logging.warning(f"⚠️ Модель {model} недоступна: {e}")
+            continue
+    
+    # Якщо AI недоступний - генеруємо динамічну локальну програму (не статичну!)
+    logging.error("❌ Всі моделі недоступні - генерую динамічну програму")
+    return generate_dynamic_program(user_id, user_message, user_params, user_goal)
 
-    if len(user_context[user_id]) > 10:
-        user_context[user_id] = user_context[user_id][-10:]
 
-    history_text = "\n".join(user_context[user_id])
-    full_prompt = f"{system_prompt}\n\nІсторія діалогу:\n{history_text}\n\nТвоя відповідь:"
+def generate_dynamic_program(user_id, user_message, user_params, user_goal):
+    """Генерує динамічну (не статичну) програму на основі параметрів користувача"""
+    msg = user_message.lower()
+    
+    # Визначаємо рівень користувача (на основі історії або за замовчуванням)
+    user_level = "початківець"
+    if user_id in user_context:
+        history = " ".join(user_context[user_id])
+        if "профі" in history or "досвід" in history:
+            user_level = "просунутий"
+        elif "середній" in history:
+            user_level = "середній"
+    
+    # Визначаємо стать для звертання
+    gender = user_params.get('gender', 'друже')
+    if gender == 'чоловік':
+        greeting = f"Вітаю, {user_level}й атлете!"
+    elif gender == 'жінка':
+        greeting = f"Вітаю, {user_level} атлетко!"
+    else:
+        greeting = f"Вітаю, {user_level}й спортсмене!"
+    
+    # Визначаємо місце тренувань
+    if 'дім' in msg or 'дома' in msg or 'гантел' in msg:
+        location = "домашнє"
+        location_emoji = "🏠"
+    elif 'воркаут' in msg or 'турнік' in msg:
+        location = "воркаут"
+        location_emoji = "🤸"
+    else:
+        location = "зальне"
+        location_emoji = "🏋️"
+    
+    # Визначаємо ціль
+    if 'схудн' in msg or 'скин' in msg:
+        goal_type = "схуднення"
+        goal_advice = "Фокус на спалюванні калорій та інтервальному тренуванні"
+        reps_range = "12-15 повторень"
+        rest_time = "45-60 секунд"
+    elif 'набрат' in msg or 'мас' in msg:
+        goal_type = "набір м'язової маси"
+        goal_advice = "Фокус на базових вправах з прогресією ваги"
+        reps_range = "8-12 повторень"
+        rest_time = "90-120 секунд"
+    else:
+        goal_type = "підтримка форми"
+        goal_advice = "Комбінований підхід для загального тонусу"
+        reps_range = "10-15 повторень"
+        rest_time = "60-75 секунд"
+    
+    # Генеруємо унікальну програму (кожен раз різна через використання параметрів)
+    program = f"""{greeting}
 
-    try:
-        await asyncio.sleep(0.5)
-        response = await asyncio.to_thread(
-            client.models.generate_content,
-            model="gemini-1.5-flash",
-            contents=full_prompt
-        )
-        ai_answer = response.text
-        user_context[user_id].append(f"Тренер: {ai_answer}")
-        return ai_answer
+🎯 *Твоя ПЕРСОНАЛЬНА програма для {location}го тренування*
+📍 *Ціль:* {goal_type}
+📊 *Рівень:* {user_level.capitalize()}
+⏱️ *Режим:* {reps_range}, відпочинок {rest_time}
 
-    except Exception as e:
-        logging.error(f"Google AI Error: {e}")
-        return "Вибач, зараз виникла технічна проблема. Спробуй ще раз за хвилину. А поки що можеш скористатися кнопками для тренувань! 💪"
+📋 *РОЗПИС ТРЕНУВАНЬ (3 рази на тиждень):*
+
+🗓 *Тренування 1 - Верх тіла:*
+1. {choose_exercise('upper', location, 1)} — 4 × {reps_range.split('-')[0] if '-' in reps_range else reps_range}
+2. {choose_exercise('upper', location, 2)} — 4 × {reps_range.split('-')[0] if '-' in reps_range else reps_range}
+3. {choose_exercise('upper', location, 3)} — 3 × {reps_range.split('-')[0] if '-' in reps_range else reps_range}
+4. {choose_exercise('core', location, 1)} — 3 × 30-45 сек
+
+🗓 *Тренування 2 - Нижня частина + Прес:*
+1. {choose_exercise('lower', location, 1)} — 4 × {reps_range.split('-')[1] if '-' in reps_range else reps_range}
+2. {choose_exercise('lower', location, 2)} — 4 × {reps_range.split('-')[1] if '-' in reps_range else reps_range}
+3. {choose_exercise('lower', location, 3)} — 3 × {reps_range.split('-')[1] if '-' in reps_range else reps_range}
+4. {choose_exercise('core', location, 2)} — 3 × 20-25 разів
+
+🗓 *Тренування 3 - Повне тіло + Кардіо:*
+1. {choose_exercise('full', location, 1)} — 3 × {reps_range.split('-')[0] if '-' in reps_range else reps_range}
+2. {choose_exercise('full', location, 2)} — 3 × {reps_range.split('-')[0] if '-' in reps_range else reps_range}
+3. {choose_exercise('full', location, 3)} — 3 × {reps_range.split('-')[1] if '-' in reps_range else reps_range}
+4. Кардіо (біг/велосипед/скакалка) — 15-20 хвилин
+
+💡 *Порада:* {goal_advice}
+
+Бажаю успіху! Якщо хочеш ІНШУ програму - просто напиши "давай іншу" 💪"""
+
+    return program
+
+
+def choose_exercise(muscle_group, location, variant):
+    """Повертає випадкову вправу для урізноманітнення програм"""
+    import random
+    
+    exercises = {
+        'upper': {
+            'зальне': ['Жим штанги лежачи', 'Жим гантелей на похилій', 'Тяга верхнього блоку', 'Жим гантелей сидячи', 'Підтягування в гравітроні'],
+            'домашнє': ['Віджимання від підлоги', 'Жим гантелей лежачи', 'Тяга гантелі до пояса', 'Віджимання алмазні', 'Жим гантелей над головою'],
+            'воркаут': ['Віджимання на брусах', 'Підтягування на турніку', 'Віджимання від лави', 'Австралійські підтягування', 'Віджимання з широкою постановкою']
+        },
+        'lower': {
+            'зальне': ['Присідання зі штангою', 'Жим ногами', 'Румунська тяга', 'Випади з гантелями', 'Згинання ніг лежачи'],
+            'домашнє': ['Присідання з гантелями', 'Випади назад', 'Сідничний місток', 'Болгарські присідання', 'Присідання пліє'],
+            'воркаут': ['Присідання біля стіни', 'Випади на місці', 'Стрибки на місці', 'Підйоми на носки', 'Бічні випади']
+        },
+        'full': {
+            'зальне': ['Станова тяга', 'Берпі зі штангою', 'Присідання з вистрибуванням', 'Тяга штанги в нахилі', 'Жим штанги стоячи'],
+            'домашнє': ['Берпі', 'Присідання з вистрибуванням', 'Віджимання з бавовною', 'Скакалка', 'Біг на місці'],
+            'воркаут': ['Берпі', 'Підтягування + віджимання', 'Стрибки зірка', 'Скелелаз', 'Присідання з вистрибуванням']
+        },
+        'core': {
+            'зальне': ['Планка на фітболі', 'Скручування на лаві', 'Підйоми ніг у висі', 'Російський твіст', 'Вакуум живота'],
+            'домашнє': ['Планка класична', 'Скручування на підлозі', 'Велосипед лежачи', 'Підйоми ніг лежачи', 'Бічні скручування'],
+            'воркаут': ['Планка на турніку', 'Підйоми колін у висі', 'Складка', 'Планка з підйомом ноги', 'Лазати по турніку']
+        }
+    }
+    
+    ex_list = exercises.get(muscle_group, {}).get(location, exercises.get(muscle_group, {}).get('зальне', ['Вправа']))
+    # Використовуємо variant для вибору різних вправ
+    idx = (variant - 1) % len(ex_list)
+    return ex_list[idx]
 
 
     # ВАШІ ПРОГРАМИ (залиште як є, тут скорочено для прикладу)
-    programs = [
+programs = [
     # ==================== ДОДАТКОВІ ПРОГРАМИ ДЛЯ ЧОЛОВІКІВ ====================
 
 # ЧОЛОВІКИ - ХУДІ - ПРОФІ (ВСІ ЛОКАЦІЇ)
@@ -731,15 +892,7 @@ async def get_ai_response_router(user_id, user_message):
  '⏱️ 75 хв | 🔥 550 ккал', 75, 550),
     ]
 
-    cursor.executemany("INSERT INTO programs (gender, body_type, level, location, plan, duration, calories_burn) VALUES (?, ?, ?, ?, ?, ?, ?)", programs)
-    conn.commit()
 
-    cursor.execute("SELECT COUNT(*) FROM programs")
-    count = cursor.fetchone()[0]
-    print(f"✅ Базу даних створено! Додано {count} програм")
-
-    conn.close()
-    return conn
 
 # --- ФУНКЦІЇ ДЛЯ АНАЛІЗУ ---
 def calculate_bmi(height, weight):
@@ -844,10 +997,10 @@ def get_exercises_db():
 
         # ==================== НОГИ ====================
         'Присідання зі штангою': 'https://www.youtube.com/watch?v=jXx8pJmjFAM',
-        'Присідання з гантелями': 'Присідання з гантелями',
+        'Присідання з гантелями': 'https://www.youtube.com/watch?v=example1',
         'Присідання пліє': 'https://www.youtube.com/watch?v=rS37t0yYJsg',
         'Присідання біля стіни': 'https://www.youtube.com/shorts/l2J1MbNqdYk',
-        'Присідання на одній нозі': 'Присідання на одній нозі',
+        'Присідання на одній нозі': 'https://www.youtube.com/watch?v=example2',
         'Болгарські присідання': 'https://www.youtube.com/watch?v=2FqHHcyQ3pA',
         'Жим ногами': 'https://www.youtube.com/watch?v=2yyubRHBgIU',
         'Румунська тяга': 'https://www.youtube.com/watch?v=LfAlxVGgFCo',
@@ -1340,12 +1493,14 @@ async def quick_response(user_message):
         if key in msg:
             return answer
     return None
+## --- ГОЛОВНИЙ ОБРОБНИК (ОДИН ПРАВИЛЬНИЙ) ---
+from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
-# --- ГОЛОВНИЙ ОБРОБНИК ---
 @dp.message()
 async def handle_all_messages(message: types.Message):
     user_id = message.from_user.id
     user_input = message.text
+    user_input_lower = user_input.lower()
 
     # Швидкі відповіді без AI (економить ліміт)
     quick_ans = await quick_response(user_input)
@@ -1353,19 +1508,20 @@ async def handle_all_messages(message: types.Message):
         await message.answer(quick_ans, parse_mode="Markdown")
         return
 
-    # Перевірка режиму AI
+    # Перевірка режиму AI (ЦЕ НАЙГОЛОВНІШЕ - ПОВИННО БУТИ ПЕРШИМ)
     current_mode = user_profiles.get(user_id, {}).get('mode')
-
+    
+    # ЯКЩО КОРИСТУВАЧ В РЕЖИМІ AI КОНСУЛЬТАЦІЇ
     if current_mode == 'ai_consult':
         # Перевірка на вихід
-        if user_input.lower() in ['/exit', 'вихід', 'стоп']:
+        if user_input_lower in ['/exit', 'вихід', 'стоп']:
             user_profiles[user_id]['mode'] = 'normal'
             await message.answer("👋 Вихід з AI режиму!", reply_markup=get_main_menu())
             return
 
         # Перевірка на заборонені теми
         off_topic = ['політика', 'погода', 'війна', 'новини', 'фільм', 'серіал', 'музика']
-        if any(word in user_input.lower() for word in off_topic):
+        if any(word in user_input_lower for word in off_topic):
             await message.answer(
                 "🎯 *Я ваш персональний фітнес-тренер!*\n\n"
                 "Давайте повернемося до спорту та здоров'я 💪\n\n"
@@ -1375,26 +1531,68 @@ async def handle_all_messages(message: types.Message):
             return
 
         # Аналіз цілей користувача
-        if any(word in user_input.lower() for word in ['схуднути', 'скинути', 'схуднення']):
+        if any(word in user_input_lower for word in ['схуднути', 'скинути', 'схуднення']):
             user_goals[user_id] = 'схуднення'
-        elif any(word in user_input.lower() for word in ['набрати', 'масу', 'м\'язи', 'качати']):
+        elif any(word in user_input_lower for word in ['набрати', 'масу', 'м\'язи', 'качати']):
             user_goals[user_id] = 'набір_маси'
-        elif any(word in user_input.lower() for word in ['підтримувати', 'форма', 'рельєф']):
+        elif any(word in user_input_lower for word in ['підтримувати', 'форма', 'рельєф']):
             user_goals[user_id] = 'підтримка'
 
         # Відповідь AI
         await bot.send_chat_action(message.chat.id, 'typing')
         ai_response = await get_ai_response_router(user_id, user_input)
 
-        try:
-            await message.answer(ai_response, parse_mode="Markdown")
-        except Exception:
-            await message.answer(ai_response)
+        # Лікування довгих повідомлень
+        MAX_LENGTH = 3800
+        if len(ai_response) > MAX_LENGTH:
+            chunks = []
+            current_chunk = ""
+            for line in ai_response.splitlines(keepends=True):
+                if len(current_chunk) + len(line) > MAX_LENGTH:
+                    chunks.append(current_chunk)
+                    current_chunk = line
+                else:
+                    current_chunk += line
+            if current_chunk:
+                chunks.append(current_chunk)
+            for chunk in chunks:
+                try:
+                    await message.answer(chunk, parse_mode="Markdown")
+                except Exception:
+                    await message.answer(chunk)
+        else:
+            try:
+                await message.answer(ai_response, parse_mode="Markdown")
+            except Exception:
+                await message.answer(ai_response)
         return
 
-    # --- ЯКЩО НЕ В РЕЖИМІ AI ---
-      
-    user_input_lower = user_input.lower()
+    # --- ТУТ ВСЕ ЩО НИЖЧЕ - ПРАЦЮЄ ТІЛЬКИ КОЛИ НЕ В РЕЖИМІ AI ---
+    
+    # Спеціальний блок для кнопок меню
+    if user_input == "💪 Програми":
+        await message.answer("Для кого підібрати план?", reply_markup=get_training_inline())
+        return
+    
+    if user_input == "📹 База вправ":
+        await exercise_base(message)
+        return
+    
+    if user_input == "📍 Спортзали поруч":
+        await show_gyms_map(message)
+        return
+    
+    if user_input == "🥗 Розрахунок калорій":
+        await calories_handler(message)
+        return
+    
+    if user_input == "📊 Мій прогрес":
+        await progress_handler(message)
+        return
+    
+    if user_input == "🤖 NLP Консультація":
+        await nlp_consult(message)
+        return
 
     # Перевірка на біль
     if any(word in user_input_lower for word in ['болить', 'біль', 'спина', 'коліно', 'плече']):
@@ -1410,7 +1608,7 @@ async def handle_all_messages(message: types.Message):
         )
         return
 
-    # Витягуємо інформацію з тексту
+    # Витягуємо інформацію з тексту (зріст, вага, стать)
     extracted = extract_info(user_input_lower)
     for key, value in extracted.items():
         if value:
@@ -1430,42 +1628,52 @@ async def handle_all_messages(message: types.Message):
             advice = "варто проконсультуватися з лікарем перед тренуваннями"
 
         await message.answer(
-            f"Ось твої показники: зріст {extracted['height']} см, вага {extracted['weight']} кг. "
-            f"Індекс маси тіла {bmi} — {advice}. Якщо хочеш отримати програму тренувань, просто натисни кнопку 'Програми'.",
-            reply_markup=get_main_menu()
+            f"📊 *Твої показники:*\n"
+            f"📏 Зріст: {extracted['height']} см\n"
+            f"⚖️ Вага: {extracted['weight']} кг\n"
+            f"📈 ІМТ: {bmi} — {advice}\n\n"
+            f"💡 *Порада:* Натисни '🤖 NLP Консультація', щоб отримати персональну програму тренувань від AI!",
+            reply_markup=get_main_menu(),
+            parse_mode="Markdown"
         )
         return
 
-    # Якщо просте вітання - природна відповідь (НЕ через AI)
-    if any(word in user_input_lower for word in ['привіт', 'вітання', 'добрий день', 'hello']):
-        await message.answer(
-            "Привіт! Я твій персональний AI-тренер. Натисни '🤖 NLP Консультація', щоб поговорити зі мною, або скористайся кнопками для тренувань, розрахунку калорій та інших функцій. Також можеш просто написати свої параметри, наприклад 'чоловік 175 см 70 кг', і я розрахую твій BMI! 💪",
-            reply_markup=get_main_menu()
-        )
-        return
-        
-    # Якщо нічого не розпізнали - пропонуємо скористатися кнопками
-    await message.answer(
-        "Я тебе слухаю! Ти можеш скористатися кнопками внизу: 💪 Програми для тренувань, 📹 База вправ, 🥗 Розрахунок калорій, 📊 Мій прогрес. Або натисни '🤖 NLP Консультація', щоб поспілкуватися зі мною. Також напиши свої параметри, наприклад 'чоловік 175 см 70 кг', і я розрахую BMI!",
-        reply_markup=get_main_menu()
-    )
-        return
-    # Якщо нічого не розпізнали
+    # Якщо нічого не розпізнали - пропонуємо скористатися AI консультацією
     await message.answer(
         "🤔 *Я вас зрозумів!*\n\n"
         "Обери дію:\n\n"
-        "👉 *'🤖 NLP Консультація'* - поговорити з AI\n"
-        "👉 *'💪 Програми'* - отримати план тренувань\n"
+        "👉 *'🤖 NLP Консультація'* - поговорити з AI (отримаєш ПЕРСОНАЛЬНУ програму)\n"
+        "👉 *'💪 Програми'* - вибрати готову програму за параметрами\n"
         "👉 *Або напиши свої параметри:*\n"
         "   'Чоловік 175 см 70 кг' - я розрахую BMI",
         reply_markup=get_main_menu(),
         parse_mode="Markdown"
     )
-
+    
 if __name__ == '__main__':
-    init_db()
+    # Створення бази даних вручну
+    conn = sqlite3.connect('fitness_expert.db')
+    cursor = conn.cursor()
+    
+    # Створюємо таблицю програм (якщо її немає)
+    cursor.execute('''CREATE TABLE IF NOT EXISTS programs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        gender TEXT,
+        body_type TEXT,
+        level TEXT,
+        location TEXT,
+        plan TEXT,
+        duration INTEGER,
+        calories_burn INTEGER
+    )''')
+    
+    # Додаємо програми в базу
+    cursor.executemany("INSERT OR IGNORE INTO programs (gender, body_type, level, location, plan, duration, calories_burn) VALUES (?, ?, ?, ?, ?, ?, ?)", programs)
+    conn.commit()
+    conn.close()
+    
     print("=" * 50)
     print("🤖 Бот TITAN PROTOCOL запущено!")
     print("=" * 50)
-
+    
     asyncio.run(dp.start_polling(bot))
