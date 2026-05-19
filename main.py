@@ -115,10 +115,10 @@ async def get_ai_response_router(user_id, user_message):
         user_context[user_id] = user_context[user_id][-10:]
 
     # Формуємо повний запит
-    history_text = "\n".join(user_context[user_id])
+    h    history_text = "\n".join(user_context[user_id])
     full_prompt = f"{system_prompt}\n\nІсторія діалогу:\n{history_text}\n\nВаша відповідь:"
 
-           try:
+    try:
         await asyncio.sleep(0.5)
         response = await asyncio.to_thread(
             client.models.generate_content,
