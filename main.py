@@ -7,7 +7,7 @@ import httpx
 import logging
 import asyncio
 import os
-import google.generativeai as genai
+from google import genai
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
@@ -119,17 +119,21 @@ async def get_ai_response_router(user_id, user_message):
     history_text = "\n".join(user_context[user_id])
     full_prompt = f"{system_prompt}\n\nІсторія діалогу:\n{history_text}\n\nВаша відповідь:"
 
-    try:
+        try:
         await asyncio.sleep(0.5)
-        response = await gemma_model.generate_content_async(full_prompt)
+        # Новий спосіб виклику API
+        response = await asyncio.to_thread(
+            client.models.generate_content,
+            model="gemini-1.5-pro",
+            contents=full_prompt
+        )
         ai_answer = response.text
         user_context[user_id].append(f"Асистент: {ai_answer}")
         return ai_answer
 
     except Exception as e:
         logging.error(f"Google AI Error: {e}")
-        return "❌ Помилка з'єднання з AI. Спробуйте ще раз за хвилину."
-
+        return "Вибач, зараз виникла технічна проблема з AI. Спробуй ще раз за хвилину. А поки що можу допомогти з тренуваннями через кнопки внизу! 💪"
 # --- ПОВНА БАЗА ДАНИХ ---
 def init_db():
     if os.path.exists('fitness_expert.db'):
