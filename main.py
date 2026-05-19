@@ -27,7 +27,7 @@ user_stats = {}  # Статистика
 
 # Налаштування API
 # Налаштування API
-GOOGLE_API_KEY = "AIzaSyDmHiR7g3MFVzKZm3e_jHboOeISCdvF6wQ"
+GOOGLE_API_KEY = "AIzaSyBULFZ-cuhoHe2xubWJCaLITOEibsTmw80"
 client = genai.Client(api_key=GOOGLE_API_KEY)
 
 def analyze_intent(text):
