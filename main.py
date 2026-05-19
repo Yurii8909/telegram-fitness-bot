@@ -1435,6 +1435,7 @@ async def handle_all_messages(message: types.Message):
             reply_markup=get_main_menu()
         )
         return
+
     # Якщо просте вітання - природна відповідь (НЕ через AI)
     if any(word in user_input_lower for word in ['привіт', 'вітання', 'добрий день', 'hello']):
         await message.answer(
@@ -1448,7 +1449,6 @@ async def handle_all_messages(message: types.Message):
         "Я тебе слухаю! Ти можеш скористатися кнопками внизу: 💪 Програми для тренувань, 📹 База вправ, 🥗 Розрахунок калорій, 📊 Мій прогрес. Або натисни '🤖 NLP Консультація', щоб поспілкуватися зі мною. Також напиши свої параметри, наприклад 'чоловік 175 см 70 кг', і я розрахую BMI!",
         reply_markup=get_main_menu()
     )
-
         return
     # Якщо нічого не розпізнали
     await message.answer(
@@ -1461,6 +1461,7 @@ async def handle_all_messages(message: types.Message):
         reply_markup=get_main_menu(),
         parse_mode="Markdown"
     )
+
 if __name__ == '__main__':
     init_db()
     print("=" * 50)
@@ -1468,4 +1469,3 @@ if __name__ == '__main__':
     print("=" * 50)
 
     asyncio.run(dp.start_polling(bot))
-
