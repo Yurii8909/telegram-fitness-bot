@@ -63,7 +63,7 @@ def analyze_intent(text):
         context_hint = "Користувач хоче дізнатися техніку вправи. "
 
     # Системний промпт (роль тренера)
-  async def get_ai_response_router(user_id, user_message):
+async def get_ai_response_router(user_id, user_message):
     """Функція для роботи з Google Gemini API в режимі NLP Консультація"""
 
     # Системний промпт для AI
