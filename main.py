@@ -31,6 +31,7 @@ user_stats = {}  # Статистика
 
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 # Список безкоштовних моделей
 FREE_MODELS = [
     "deepseek/deepseek-chat",           # DeepSeek - найкраща для української
