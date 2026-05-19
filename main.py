@@ -26,11 +26,10 @@ user_goals = {}  # Цілі користувача
 user_stats = {}  # Статистика
 
 # Налаштування API
+# Налаштування API
 GOOGLE_API_KEY = "AIzaSyDmHiR7g3MFVzKZm3e_jHboOeISCdvF6wQ"
-genai.configure(api_key=GOOGLE_API_KEY)
+client = genai.Client(api_key=GOOGLE_API_KEY)
 
-# Використовуєм безкоштовну модель Gemma 4 31B
-gemma_model = genai.GenerativeModel("gemini-1.5-pro")
 def analyze_intent(text):
     text = text.lower()
 
