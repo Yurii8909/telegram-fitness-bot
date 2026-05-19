@@ -118,9 +118,8 @@ async def get_ai_response_router(user_id, user_message):
     history_text = "\n".join(user_context[user_id])
     full_prompt = f"{system_prompt}\n\nІсторія діалогу:\n{history_text}\n\nВаша відповідь:"
 
-        try:
+           try:
         await asyncio.sleep(0.5)
-        # Новий спосіб виклику API
         response = await asyncio.to_thread(
             client.models.generate_content,
             model="gemini-1.5-pro",
@@ -133,7 +132,6 @@ async def get_ai_response_router(user_id, user_message):
     except Exception as e:
         logging.error(f"Google AI Error: {e}")
         return "Вибач, зараз виникла технічна проблема з AI. Спробуй ще раз за хвилину. А поки що можу допомогти з тренуваннями через кнопки внизу! 💪"
-# --- ПОВНА БАЗА ДАНИХ ---
 def init_db():
     if os.path.exists('fitness_expert.db'):
         os.remove('fitness_expert.db')
