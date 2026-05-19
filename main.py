@@ -5,15 +5,13 @@ import sqlite3
 import os
 import re
 import random
-import httpx
 import asyncio
-import os
-from google import genai
-from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from datetime import datetime
+from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
+from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
 
 
