@@ -50,19 +50,6 @@ def analyze_intent(text):
     return 'загальний'
 
 
-    # Аналізуємо намір користувача
-    intent = analyze_intent(user_message)
-
-    # Додаємо інтент в контекст
-    context_hint = ""
-    if intent == 'тренування':
-        context_hint = "Користувач хоче отримати план тренувань. "
-    elif intent == 'харчування':
-        context_hint = "Користувач питає про харчування. "
-    elif intent == 'техніка':
-        context_hint = "Користувач хоче дізнатися техніку вправи. "
-
-    # Системний промпт (роль тренера)
 async def get_ai_response_router(user_id, user_message):
     """Функція для роботи з Google Gemini API в режимі NLP Консультація"""
 
@@ -95,6 +82,7 @@ async def get_ai_response_router(user_id, user_message):
     except Exception as e:
         logging.error(f"Google AI Error: {e}")
         return "Вибач, зараз виникла технічна проблема. Спробуй ще раз за хвилину. А поки що можеш скористатися кнопками для тренувань! 💪"
+
 
     # ВАШІ ПРОГРАМИ (залиште як є, тут скорочено для прикладу)
     programs = [
