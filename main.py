@@ -48,8 +48,7 @@ def analyze_intent(text):
         if any(keyword in text for keyword in keywords):
             return intent
     return 'загальний'
-async def get_ai_response_router(user_id, user_message):
-    """Функція для роботи з Google Gemini API в режимі NLP Консультація"""
+
 
     # Аналізуємо намір користувача
     intent = analyze_intent(user_message)
