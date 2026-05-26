@@ -896,26 +896,48 @@ def calculate_bmi(height, weight):
     return None
 
 def extract_info(text):
+    def extract_info(text):
     info = {}
     text = text.lower()
 
-    if 'чоловік' in text or 'хлоп' in text:
+    # Визначаємо стать
+    if 'чоловік' in text or 'хлоп' in text or 'чол' in text:
         info['gender'] = 'чоловік'
-    elif 'жінк' in text or 'дівч' in text:
+    elif 'жінк' in text or 'дівч' in text or 'жін' in text:
         info['gender'] = 'жінка'
 
+    # Визначаємо ціль
     if 'схудн' in text or 'скин' in text:
         info['goal'] = 'схуднення'
-    elif 'набр' in text or 'мас' in text:
+    elif 'набр' in text or 'мас' in text or 'набрати' in text:
         info['goal'] = 'набір_маси'
 
+    # Шукаємо зріст (3 цифри, потім см)
     height_match = re.search(r'(\d{3})\s*см', text)
     if height_match:
         info['height'] = int(height_match.group(1))
+    
+    # Якщо не знайшли, шукаємо просто 3 цифри
+    if not info.get('height'):
+        height_match = re.search(r'(\d{3})\b', text)
+        if height_match:
+            info['height'] = int(height_match.group(1))
 
+    # Шукаємо вагу (2-3 цифри, потім кг)
     weight_match = re.search(r'(\d{2,3})\s*кг', text)
     if weight_match:
         info['weight'] = int(weight_match.group(1))
+    
+    # Якщо не знайшли, шукаємо 2-3 цифри після зросту
+    if not info.get('weight'):
+        weight_match = re.search(r'(\d{2,3})\b', text)
+        if weight_match and weight_match.group(1) != str(info.get('height', '')):
+            info['weight'] = int(weight_match.group(1))
+
+    # Шукаємо вік
+    age_match = re.search(r'(\d{1,2})\s*рок', text)
+    if age_match:
+        info['age'] = int(age_match.group(1))
 
     return info
 
@@ -1912,8 +1934,24 @@ async def handle_all_messages(message: types.Message):
             user_profiles[user_id][key] = value
 
     # Якщо є зріст і вага - показуємо BMI
+       # Витягуємо інформацію з тексту (зріст, вага, стать, вік)
+    extracted = extract_info(user_input_lower)
+    
+    # Діагностика в консоль
+    print(f"Отримано дані: {extracted}")
+    
+    for key, value in extracted.items():
+        if value:
+            user_profiles[user_id][key] = value
+            print(f"Збережено {key}: {value}")
+
+    # Якщо є зріст і вага - показуємо BMI
     if extracted.get('height') and extracted.get('weight'):
         bmi = calculate_bmi(extracted['height'], extracted['weight'])
+        
+        # Зберігаємо вік якщо є
+        if extracted.get('age'):
+            user_profiles[user_id]['age'] = extracted['age']
 
         if bmi < 18.5:
             advice = "тобі варто трохи набрати маси"
@@ -1928,13 +1966,14 @@ async def handle_all_messages(message: types.Message):
             f"📊 *Твої показники:*\n"
             f"📏 Зріст: {extracted['height']} см\n"
             f"⚖️ Вага: {extracted['weight']} кг\n"
+            f"🎂 Вік: {extracted.get('age', 'не вказано')}\n"
             f"📈 ІМТ: {bmi} — {advice}\n\n"
-            f"💡 *Порада:* Натисни '🤖 NLP Консультація', щоб отримати персональну програму тренувань від AI!",
+            f"💡 *Порада:* Натисни '📊 Мій прогрес' щоб побачити збережені дані!\n"
+            f"або '🥗 Розрахунок калорій' для детального розрахунку!",
             reply_markup=get_main_menu(),
             parse_mode="Markdown"
         )
         return
-
     # Якщо нічого не розпізнали - пропонуємо скористатися AI консультацією
     await message.answer(
         "🤔 *Я вас зрозумів!*\n\n"
