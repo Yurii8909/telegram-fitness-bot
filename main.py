@@ -1324,11 +1324,74 @@ async def back_to_exercises(callback: types.CallbackQuery):
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     user_profiles[message.from_user.id] = {}
-    await message.answer(
-        "Привіт! Я твій персональний тренер. Просто напиши свої параметри, наприклад 'чоловік 175 см 70 кг', і я розрахую індекс маси тіла. Або обери потрібне на кнопках унизу.",
-        reply_markup=get_main_menu()
-    )
+    
+    # Інструкція для користувача
+    instruction = """
+🤖 *ВІТАЮ В TITAN PROTOCOL!* 🤖
 
+Я твій персональний AI-тренер з фітнесу. Ось що я вмію:
+
+━━━━━━━━━━━━━━━━━━━━━
+📌 *ОСНОВНІ КОМАНДИ*
+━━━━━━━━━━━━━━━━━━━━━
+
+💪 *Програми* - вибір готових тренувань
+   → Обери стать → тип статури → рівень → місце тренувань
+   
+📹 *База вправ* - відеоінструкції YouTube
+   → Обери групу м'язів → отримай відео з технікою
+   
+🥗 *Розрахунок калорій* - персональна норма
+   → Введи: "чоловік, 175 см, 70 кг, 25 років"
+   → Обери активність → отримай БЖУ
+   
+📊 *Мій прогрес* - перегляд збережених даних
+   
+📍 *Спортзали поруч* - мапа спортзалів Миколаєва
+
+━━━━━━━━━━━━━━━━━━━━━
+🧠 *AI КОНСУЛЬТАЦІЯ*
+━━━━━━━━━━━━━━━━━━━━━
+
+🤖 *NLP Консультація* - інтелектуальний тренер
+   → Отримай ПЕРСОНАЛЬНІ програми
+   → Задай питання про харчування
+   → Поради по техніці вправ
+   → Для виходу напиши: /exit
+
+━━━━━━━━━━━━━━━━━━━━━
+💡 *ШВИДКІ ПИТАННЯ*
+━━━━━━━━━━━━━━━━━━━━━
+
+Спитай мене про:
+• "скільки води" - норма води на день
+• "скільки спати" - режим сну
+• "коли їсти" - графік харчування
+• "розминка" - як правильно розминатись
+• "білок" - скільки білка потрібно
+• "болять м'язи" - що робити
+
+━━━━━━━━━━━━━━━━━━━━━
+📝 *ПРИКЛАДИ ЗАПИТІВ*
+━━━━━━━━━━━━━━━━━━━━━
+
+Просто напиши:
+• "чоловік 180 см 75 кг" - розрахую BMI
+• "дай програму для схуднення" - AI підбере
+• "як правильно присідати" - поради з техніки
+• "скільки калорій з'їдати" - розрахунок
+
+━━━━━━━━━━━━━━━━━━━━━
+
+👇 *ОБЕРИ ПОТРІБНУ ДІЮ НА КНОПКАХ НИЖЧЕ* 👇
+"""
+    
+    await message.answer(
+        instruction,
+        reply_markup=get_main_menu(),
+        parse_mode="Markdown"
+    )
+    
 @dp.message(F.text == "💪 Програми")
 async def show_programs(message: types.Message):
     await message.answer("Для кого підібрати план?", reply_markup=get_training_inline())
@@ -1344,13 +1407,113 @@ async def show_gyms_map(message: types.Message):
 
 @dp.message(F.text == "🥗 Розрахунок калорій")
 async def calories_handler(message: types.Message):
+    user_id = message.from_user.id
+    
+    # Зберігаємо стан очікування даних
+    user_profiles[user_id]['awaiting_calories_data'] = True
+    
     await message.answer(
-        "🥗 *РОЗРАХУНОК КАЛОРІЙ*\n\n"
-        "Для розрахунку напишіть:\n"
-        "• 'Чоловік, 180 см, 75 кг, 25 років'\n\n"
-        "Або натисніть '🤖 NLP Консультація'",
+        "🥗 *КАЛЬКУЛЯТОР КАЛОРІЙ* 🥗\n\n"
+        "Щоб розрахувати вашу добову норму калорій, введіть дані у форматі:\n\n"
+        "📝 `чоловік, 175 см, 70 кг, 25 років`\n"
+        "📝 `жінка, 165 см, 60 кг, 30 років`\n\n"
+        "Або введіть дані по черзі:\n"
+        "1️⃣ Ваша стать (чоловік/жінка)\n"
+        "2️⃣ Зріст (см)\n"
+        "3️⃣ Вага (кг)\n"
+        "4️⃣ Вік (років)\n\n"
+        "Потім оберете рівень активності!",
         parse_mode="Markdown"
     )
+
+@dp.message(F.text & ~F.text.startswith('/'))
+async def handle_calories_input(message: types.Message):
+    user_id = message.from_user.id
+    text = message.text.lower()
+    
+    # Перевіряємо, чи чекаємо дані для калорій
+    if user_profiles.get(user_id, {}).get('awaiting_calories_data'):
+        
+        # Спроба розпізнати всі дані в одному повідомленні
+        gender = None
+        height = None
+        weight = None
+        age = None
+        
+        # Визначаємо стать
+        if 'чоловік' in text or 'хлоп' in text or 'чол' in text:
+            gender = 'чоловік'
+        elif 'жінк' in text or 'дівч' in text or 'жін' in text:
+            gender = 'жінка'
+        
+        # Витягуємо зріст
+        height_match = re.search(r'(\d{3})\s*см', text)
+        if height_match:
+            height = int(height_match.group(1))
+        
+        # Витягуємо вагу
+        weight_match = re.search(r'(\d{2,3})\s*кг', text)
+        if weight_match:
+            weight = int(weight_match.group(1))
+        
+        # Витягуємо вік
+        age_match = re.search(r'(\d{1,3})\s*рок', text)
+        if age_match:
+            age = int(age_match.group(1))
+        
+        # Якщо знайшли всі дані
+        if gender and height and weight and age:
+            # Зберігаємо дані
+            user_profiles[user_id]['gender'] = gender
+            user_profiles[user_id]['height'] = height
+            user_profiles[user_id]['weight'] = weight
+            user_profiles[user_id]['age'] = age
+            user_profiles[user_id]['awaiting_calories_data'] = False
+            user_profiles[user_id]['awaiting_activity_level'] = True
+            
+            # Показуємо вибір активності
+            activity_kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🛋️ Мінімальна (сидяча робота)", callback_data="activity_sedentary")],
+                [InlineKeyboardButton(text="🚶 Легка (1-3 рази/тиждень)", callback_data="activity_light")],
+                [InlineKeyboardButton(text="🏋️ Середня (3-5 разів/тиждень)", callback_data="activity_moderate")],
+                [InlineKeyboardButton(text="🏃 Висока (6-7 разів/тиждень)", callback_data="activity_active")],
+                [InlineKeyboardButton(text="⚡ Екстремальна (спортсмен)", callback_data="activity_very_active")]
+            ])
+            
+            await message.answer(
+                f"✅ *Дані збережено!*\n\n"
+                f"👤 Стать: {gender}\n"
+                f"📏 Зріст: {height} см\n"
+                f"⚖️ Вага: {weight} кг\n"
+                f"🎂 Вік: {age} років\n\n"
+                f"👇 *Оберіть ваш рівень активності:*",
+                reply_markup=activity_kb,
+                parse_mode="Markdown"
+            )
+            return
+        
+        # Якщо даних недостатньо, просимо ввести правильно
+        else:
+            missing = []
+            if not gender: missing.append("стать (чоловік/жінка)")
+            if not height: missing.append("зріст (напр. 175 см)")
+            if not weight: missing.append("вагу (напр. 70 кг)")
+            if not age: missing.append("вік (напр. 25 років)")
+            
+            await message.answer(
+                f"⚠️ *Не вистачає даних:*\n" + "\n".join(f"• {m}" for m in missing) + 
+                f"\n\n📝 *Приклад правильного формату:*\n"
+                f"`чоловік, 175 см, 70 кг, 25 років`\n\n"
+                f"Або вводьте дані по одному:\n"
+                f"1️⃣ Напишіть 'чоловік' або 'жінка'\n"
+                f"2️⃣ Потім '175 см'\n"
+                f"3️⃣ Потім '70 кг'\n"
+                f"4️⃣ Потім '25 років'",
+                parse_mode="Markdown"
+            )
+            return
+    
+
 
 @dp.message(F.text == "📊 Мій прогрес")
 async def progress_handler(message: types.Message):
@@ -1384,6 +1547,118 @@ async def process_gender(callback: types.CallbackQuery):
         parse_mode="Markdown"
     )
     await callback.answer()
+    
+def calculate_calories(gender, height, weight, age, activity_level="moderate"):
+    """
+    Розрахунок добової норми калорій за формулою Міффліна-Сан Жеора
+    activity_level: 'sedentary', 'light', 'moderate', 'active', 'very_active'
+    """
+    if gender == "чоловік":
+        bmr = 10 * weight + 6.25 * height - 5 * age + 5
+    else:
+        bmr = 10 * weight + 6.25 * height - 5 * age - 161
+    
+    # Коефіцієнти активності
+    activity_multipliers = {
+        'sedentary': 1.2,      # Мінімальна активність
+        'light': 1.375,        # Легка активність 1-3 рази на тиждень
+        'moderate': 1.55,      # Середня активність 3-5 разів на тиждень
+        'active': 1.725,       # Висока активність 6-7 разів на тиждень
+        'very_active': 1.9     # Екстремальна активність
+    }
+    
+    tdee = bmr * activity_multipliers.get(activity_level, 1.55)
+    
+    # Рекомендації для схуднення (-20%) та набору маси (+15%)
+    weight_loss = tdee * 0.8
+    weight_gain = tdee * 1.15
+    
+    return {
+        'bmr': round(bmr),
+        'tdee': round(tdee),
+        'weight_loss': round(weight_loss),
+        'weight_gain': round(weight_gain),
+        'protein': round(weight * 2.0),      # 2г на кг ваги
+        'fats': round(weight * 0.8),          # 0.8г на кг ваги
+        'carbs': round((tdee - (weight * 2.0 * 4) - (weight * 0.8 * 9)) / 4)
+    }
+
+@dp.callback_query(F.data.startswith("activity_"))
+async def process_activity(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    activity_level = callback.data.split("_")[1]
+    
+    # Отримуємо дані користувача
+    user_data = user_profiles.get(user_id, {})
+    gender = user_data.get('gender')
+    height = user_data.get('height')
+    weight = user_data.get('weight')
+    age = user_data.get('age')
+    
+    if all([gender, height, weight, age]):
+        # Розраховуємо калорії
+        calories = calculate_calories(gender, height, weight, age, activity_level)
+        
+        # Назви рівнів активності
+        activity_names = {
+            'sedentary': '🛋️ Мінімальна активність (сидяча робота)',
+            'light': '🚶 Легка активність (1-3 рази/тиждень)',
+            'moderate': '🏋️ Середня активність (3-5 разів/тиждень)',
+            'active': '🏃 Висока активність (6-7 разів/тиждень)',
+            'very_active': '⚡ Екстремальна активність (спортсмен)'
+        }
+        
+        # Формуємо детальну відповідь
+        response = (
+            f"🥗 *ВАША ДОБОВА НОРМА КАЛОРІЙ* 🥗\n\n"
+            f"📊 *Базовий метаболізм (BMR):* {calories['bmr']} ккал\n"
+            f"🏃‍♂️ *З урахуванням активності:* {calories['tdee']} ккал\n\n"
+            f"🎯 *Цільові норми:*\n"
+            f"• Для схуднення: {calories['weight_loss']} ккал/день\n"
+            f"• Для підтримки: {calories['tdee']} ккал/день\n"
+            f"• Для набору маси: {calories['weight_gain']} ккал/день\n\n"
+            f"🍽️ *БЖУ для вашої ваги:*\n"
+            f"• Білки: {calories['protein']} г ({calories['protein']*4} ккал)\n"
+            f"• Жири: {calories['fats']} г ({calories['fats']*9} ккал)\n"
+            f"• Вуглеводи: {calories['carbs']} г ({calories['carbs']*4} ккал)\n\n"
+            f"💡 *Порада:* Для схуднення створіть дефіцит 300-500 ккал, "
+            f"але не їжте менше {calories['weight_loss']} ккал!\n\n"
+            f"✅ *Рівень активності:* {activity_names.get(activity_level)}"
+        )
+        
+        # Кнопка для повторного розрахунку
+        recalc_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔄 Перерахувати", callback_data="recalculate")]
+        ])
+        
+        await callback.message.edit_text(response, reply_markup=recalc_kb, parse_mode="Markdown")
+        
+        # Очищаємо статус очікування
+        user_profiles[user_id]['awaiting_calories_data'] = False
+        user_profiles[user_id]['awaiting_activity_level'] = False
+        
+    else:
+        await callback.message.answer(
+            "❌ *Помилка!* Деякі дані втрачено.\n"
+            "Будь ласка, почніть розрахунок заново через кнопку '🥗 Розрахунок калорій'",
+            parse_mode="Markdown"
+        )
+    
+    await callback.answer()
+
+@dp.callback_query(F.data == "recalculate")
+async def recalculate(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    user_profiles[user_id]['awaiting_calories_data'] = True
+    
+    await callback.message.answer(
+        "🔄 *Повторний розрахунок*\n\n"
+        "Введіть ваші дані у форматі:\n"
+        "`чоловік, 175 см, 70 кг, 25 років`",
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
 
 @dp.callback_query(F.data.startswith("body_"))
 async def process_body(callback: types.CallbackQuery):
@@ -1470,6 +1745,9 @@ async def exit_ai_mode(message: types.Message):
         reply_markup=get_main_menu(),  # ВИПРАВЛЕНО: get_main_menu() замість get_main_keyboard()
         parse_mode="Markdown"
     )
+
+
+    
 # Функція швидких відповідей (без API)
 async def quick_response(user_message):
     msg = user_message.lower()
