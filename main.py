@@ -896,7 +896,6 @@ def calculate_bmi(height, weight):
     return None
 
 def extract_info(text):
-    def extract_info(text):
     info = {}
     text = text.lower()
 
