@@ -890,54 +890,65 @@ programs = [
 
 
 # --- ФУНКЦІЇ ДЛЯ АНАЛІЗУ ---
-def calculate_bmi(height, weight):
-    if height and weight:
-        return round(weight / ((height/100) ** 2), 1)
-    return None
-
 def extract_info(text):
+    """Розпізнає стать, зріст, вагу, вік з тексту"""
     info = {}
     text = text.lower()
-
-    # Визначаємо стать
-    if 'чоловік' in text or 'хлоп' in text or 'чол' in text:
+    
+    print(f"🔍 Аналізую текст: {text}")  # Діагностика
+    
+    # 1. Стать
+    if 'чоловік' in text or 'хлопець' in text or 'чол' in text:
         info['gender'] = 'чоловік'
-    elif 'жінк' in text or 'дівч' in text or 'жін' in text:
+        print("  ✅ Знайдено стать: чоловік")
+    elif 'жінк' in text or 'дівчин' in text or 'жін' in text:
         info['gender'] = 'жінка'
-
-    # Визначаємо ціль
-    if 'схудн' in text or 'скин' in text:
-        info['goal'] = 'схуднення'
-    elif 'набр' in text or 'мас' in text or 'набрати' in text:
-        info['goal'] = 'набір_маси'
-
-    # Шукаємо зріст (3 цифри, потім см)
+        print("  ✅ Знайдено стать: жінка")
+    
+    # 2. Зріст (шукаємо 3 цифри + см)
+    import re
     height_match = re.search(r'(\d{3})\s*см', text)
     if height_match:
         info['height'] = int(height_match.group(1))
+        print(f"  ✅ Знайдено зріст: {info['height']} см")
     
-    # Якщо не знайшли, шукаємо просто 3 цифри
-    if not info.get('height'):
-        height_match = re.search(r'(\d{3})\b', text)
-        if height_match:
-            info['height'] = int(height_match.group(1))
-
-    # Шукаємо вагу (2-3 цифри, потім кг)
+    # 3. Вага (шукаємо 2-3 цифри + кг)
     weight_match = re.search(r'(\d{2,3})\s*кг', text)
     if weight_match:
         info['weight'] = int(weight_match.group(1))
+        print(f"  ✅ Знайдено вагу: {info['weight']} кг")
     
-    # Якщо не знайшли, шукаємо 2-3 цифри після зросту
-    if not info.get('weight'):
-        weight_match = re.search(r'(\d{2,3})\b', text)
-        if weight_match and weight_match.group(1) != str(info.get('height', '')):
-            info['weight'] = int(weight_match.group(1))
-
-    # Шукаємо вік
+    # 4. Вік (шукаємо 1-2 цифри + років/роки/р)
     age_match = re.search(r'(\d{1,2})\s*рок', text)
     if age_match:
         info['age'] = int(age_match.group(1))
-
+        print(f"  ✅ Знайдено вік: {info['age']} років")
+    
+    # ЯКЩО НІЧОГО НЕ ЗНАЙШЛИ - пробуємо простіший варіант
+    if not info.get('height') or not info.get('weight'):
+        print("  ⚠️ Спроба простого парсингу...")
+        # Розбиваємо текст на слова
+        words = text.split()
+        numbers = []
+        for word in words:
+            # Шукаємо числа
+            num_match = re.search(r'(\d{2,3})', word)
+            if num_match:
+                numbers.append(int(num_match.group(1)))
+        
+        print(f"  📊 Знайдені числа: {numbers}")
+        
+        # Якщо знайшли 2 числа - це зріст і вага
+        if len(numbers) >= 2 and not info.get('height'):
+            info['height'] = numbers[0]
+            print(f"  ✅ Встановлено зріст (з чисел): {info['height']} см")
+        if len(numbers) >= 2 and not info.get('weight'):
+            info['weight'] = numbers[1]
+            print(f"  ✅ Встановлено вагу (з чисел): {info['weight']} кг")
+        if len(numbers) >= 3 and not info.get('age'):
+            info['age'] = numbers[2]
+            print(f"  ✅ Встановлено вік (з чисел): {info['age']} років")
+    
     return info
 
 # --- КНОПКИ МЕНЮ ---
@@ -1819,7 +1830,9 @@ async def handle_all_messages(message: types.Message):
     user_id = message.from_user.id
     user_input = message.text
     user_input_lower = user_input.lower()
-
+# ДІАГНОСТИКА
+    print(f"\n📨 Отримано повідомлення від {user_id}: {user_input}")
+    
     # Швидкі відповіді без AI (економить ліміт)
     quick_ans = await quick_response(user_input)
     if quick_ans:
