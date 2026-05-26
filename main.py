@@ -1522,21 +1522,45 @@ async def progress_handler(message: types.Message):
 
     if profile.get('height') and profile.get('weight'):
         bmi = calculate_bmi(profile['height'], profile['weight'])
-        response = f"📊 *ВАШ ПРОГРЕС*\n\n"
+        
+        # Отримуємо вік, якщо є
+        age = profile.get('age', 'не вказано')
+        
+        response = f"📊 *ВАШ ПРОГРЕС* 📊\n\n"
+        response += f"👤 Стать: {profile.get('gender', 'не вказано')}\n"
         response += f"📏 Зріст: {profile['height']} см\n"
         response += f"⚖️ Вага: {profile['weight']} кг\n"
-        response += f"📈 BMI: {bmi}\n\n"
+        response += f"🎂 Вік: {age}\n"
+        response += f"📈 ІМТ: {bmi}\n\n"
         response += f"🎯 Ціль: {profile.get('goal', 'не вказано')}\n\n"
-        response += f"💪 Натисніть '💪 Програми' для плану!"
-        await message.answer(response, parse_mode="Markdown")
+        
+        # Додаємо рекомендацію по ІМТ
+        if bmi < 18.5:
+            response += "💡 *Рекомендація:* Варто набрати трохи маси. 🍗\n"
+        elif bmi < 25:
+            response += "💡 *Рекомендація:* Чудова форма! Продовжуйте в тому ж дусі! 💪\n"
+        elif bmi < 30:
+            response += "💡 *Рекомендація:* Рекомендується скоригувати харчування. 🥗\n"
+        else:
+            response += "💡 *Рекомендація:* Перед тренуваннями проконсультуйтесь з лікарем. 🩺\n"
+        
+        response += f"\n👇 *Що робити далі?*\n"
+        response += f"• 💪 'Програми' - отримати план тренувань\n"
+        response += f"• 🥗 'Розрахунок калорій' - дізнатись норму БЖУ\n"
+        response += f"• 🤖 'NLP Консультація' - персональні поради"
+        
+        await message.answer(response, parse_mode="Markdown", reply_markup=get_main_menu())
     else:
         await message.answer(
-            "📊 *НЕМАЄ ДАНИХ*\n\n"
-            "Напишіть: 'Чоловік 175 см 70 кг'\n"
-            "Або натисніть '🤖 NLP Консультація'",
-            parse_mode="Markdown"
+            "📊 *НЕМАЄ ДАНИХ ДЛЯ ПРОГРЕСУ* 📊\n\n"
+            "Щоб я міг відстежувати ваш прогрес, будь ласка, введіть свої параметри:\n\n"
+            "📝 *Наприклад:*\n"
+            "• `чоловік, 175 см, 70 кг, 25 років`\n"
+            "• `жінка, 165 см, 60 кг, 30 років`\n\n"
+            "Або натисніть '🥗 Розрахунок калорій' для детального розрахунку!",
+            parse_mode="Markdown",
+            reply_markup=get_main_menu()
         )
-
 # --- ІНЛАЙН ОБРОБНИКИ ДЛЯ ПРОГРАМ ---
 @dp.callback_query(F.data.startswith("train_"))
 async def process_gender(callback: types.CallbackQuery):
