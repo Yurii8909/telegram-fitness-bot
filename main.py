@@ -1605,10 +1605,10 @@ async def process_gender(callback: types.CallbackQuery):
     await callback.answer()
     
 def calculate_calories(gender, height, weight, age, activity_level="moderate"):
-    """
-    Розрахунок добової норми калорій за формулою Міффліна-Сан Жеора
-    activity_level: 'sedentary', 'light', 'moderate', 'active', 'very_active'
-    """
+    # Перевірка на None
+    if activity_level is None:
+        activity_level = "moderate"
+    
     if gender == "чоловік":
         bmr = 10 * weight + 6.25 * height - 5 * age + 5
     else:
@@ -1616,16 +1616,16 @@ def calculate_calories(gender, height, weight, age, activity_level="moderate"):
     
     # Коефіцієнти активності
     activity_multipliers = {
-        'sedentary': 1.2,      # Мінімальна активність
-        'light': 1.375,        # Легка активність 1-3 рази на тиждень
-        'moderate': 1.55,      # Середня активність 3-5 разів на тиждень
-        'active': 1.725,       # Висока активність 6-7 разів на тиждень
-        'very_active': 1.9     # Екстремальна активність
+        'sedentary': 1.2,
+        'light': 1.375,
+        'moderate': 1.55,
+        'active': 1.725,
+        'very_active': 1.9
     }
     
-    tdee = bmr * activity_multipliers.get(activity_level, 1.55)
+    multiplier = activity_multipliers.get(activity_level, 1.55)
+    tdee = bmr * multiplier
     
-    # Рекомендації для схуднення (-20%) та набору маси (+15%)
     weight_loss = tdee * 0.8
     weight_gain = tdee * 1.15
     
@@ -1634,73 +1634,10 @@ def calculate_calories(gender, height, weight, age, activity_level="moderate"):
         'tdee': round(tdee),
         'weight_loss': round(weight_loss),
         'weight_gain': round(weight_gain),
-        'protein': round(weight * 2.0),      # 2г на кг ваги
-        'fats': round(weight * 0.8),          # 0.8г на кг ваги
+        'protein': round(weight * 2.0),
+        'fats': round(weight * 0.8),
         'carbs': round((tdee - (weight * 2.0 * 4) - (weight * 0.8 * 9)) / 4)
     }
-
-@dp.callback_query(F.data.startswith("activity_"))
-async def process_activity(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    activity_level = callback.data.split("_")[1]
-    
-    # Отримуємо дані користувача
-    user_data = user_profiles.get(user_id, {})
-    gender = user_data.get('gender')
-    height = user_data.get('height')
-    weight = user_data.get('weight')
-    age = user_data.get('age')
-    
-    if all([gender, height, weight, age]):
-        # Розраховуємо калорії
-        calories = calculate_calories(gender, height, weight, age, activity_level)
-        
-        # Назви рівнів активності
-        activity_names = {
-            'sedentary': '🛋️ Мінімальна активність (сидяча робота)',
-            'light': '🚶 Легка активність (1-3 рази/тиждень)',
-            'moderate': '🏋️ Середня активність (3-5 разів/тиждень)',
-            'active': '🏃 Висока активність (6-7 разів/тиждень)',
-            'very_active': '⚡ Екстремальна активність (спортсмен)'
-        }
-        
-        # Формуємо детальну відповідь
-        response = (
-            f"🥗 *ВАША ДОБОВА НОРМА КАЛОРІЙ* 🥗\n\n"
-            f"📊 *Базовий метаболізм (BMR):* {calories['bmr']} ккал\n"
-            f"🏃‍♂️ *З урахуванням активності:* {calories['tdee']} ккал\n\n"
-            f"🎯 *Цільові норми:*\n"
-            f"• Для схуднення: {calories['weight_loss']} ккал/день\n"
-            f"• Для підтримки: {calories['tdee']} ккал/день\n"
-            f"• Для набору маси: {calories['weight_gain']} ккал/день\n\n"
-            f"🍽️ *БЖУ для вашої ваги:*\n"
-            f"• Білки: {calories['protein']} г ({calories['protein']*4} ккал)\n"
-            f"• Жири: {calories['fats']} г ({calories['fats']*9} ккал)\n"
-            f"• Вуглеводи: {calories['carbs']} г ({calories['carbs']*4} ккал)\n\n"
-            f"💡 *Порада:* Для схуднення створіть дефіцит 300-500 ккал, "
-            f"але не їжте менше {calories['weight_loss']} ккал!\n\n"
-            f"✅ *Рівень активності:* {activity_names.get(activity_level)}"
-        )
-        
-        # Кнопка для повторного розрахунку
-        recalc_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔄 Перерахувати", callback_data="recalculate")]
-        ])
-        
-        await callback.message.edit_text(response, reply_markup=recalc_kb, parse_mode="Markdown")
-        
-        # Очищаємо статус очікування
-        user_profiles[user_id]['awaiting_calories_data'] = False
-        user_profiles[user_id]['awaiting_activity_level'] = False
-        
-    else:
-        await callback.message.answer(
-            "❌ *Помилка!* Деякі дані втрачено.\n"
-            "Будь ласка, почніть розрахунок заново через кнопку '🥗 Розрахунок калорій'",
-            parse_mode="Markdown"
-        )
-    
-    await callback.answer()
 
 @dp.callback_query(F.data == "recalculate")
 async def recalculate(callback: types.CallbackQuery):
@@ -1938,26 +1875,25 @@ async def handle_all_messages(message: types.Message):
             parse_mode="Markdown"
         )
         return
-
-    # Витягуємо інформацію з тексту (зріст, вага, стать)
-    extracted = extract_info(user_input_lower)
-    for key, value in extracted.items():
-        if value:
-            user_profiles[user_id][key] = value
-
-    # Якщо є зріст і вага - показуємо BMI
-       # Витягуємо інформацію з тексту (зріст, вага, стать, вік)
+      # --- ОСНОВНА ОБРОБКА ДАНИХ ---
+    # Витягуємо інформацію з тексту
     extracted = extract_info(user_input_lower)
     
     # Діагностика в консоль
     print(f"Отримано дані: {extracted}")
+ 
     
     for key, value in extracted.items():
         if value:
             user_profiles[user_id][key] = value
+           
             print(f"Збережено {key}: {value}")
-
-    # Якщо є зріст і вага - показуємо BMI
+            for key, value in extracted.items():
+        if value:
+            user_profiles[user_id][key] = value
+            print(f"Збережено {key}: {value}")
+            
+   # Якщо є зріст і вага - показуємо BMI
     if extracted.get('height') and extracted.get('weight'):
         bmi = calculate_bmi(extracted['height'], extracted['weight'])
         
@@ -1986,8 +1922,9 @@ async def handle_all_messages(message: types.Message):
             parse_mode="Markdown"
         )
         return
+        
     # Якщо нічого не розпізнали - пропонуємо скористатися AI консультацією
-    await message.answer(
+     await message.answer(
         "🤔 *Я вас зрозумів!*\n\n"
         "Обери дію:\n\n"
         "👉 *'🤖 NLP Консультація'* - поговорити з AI (отримаєш ПЕРСОНАЛЬНУ програму)\n"
